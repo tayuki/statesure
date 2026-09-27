@@ -67,7 +67,10 @@ def rtsp_url_with_credentials(source: SourceConfig) -> str:
     userinfo = quote(username, safe="")
     if password:
         userinfo += ":" + quote(password, safe="")
-    netloc = f"{userinfo}@{parts.hostname}" + (f":{parts.port}" if parts.port else "")
+    host = parts.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"  # IPv6 literals keep their brackets
+    netloc = f"{userinfo}@{host}" + (f":{parts.port}" if parts.port else "")
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 

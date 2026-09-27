@@ -295,9 +295,23 @@ class ObservationLog:
     def append(self, observation: Observation) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         line = json.dumps(observation.to_dict(), ensure_ascii=False, allow_nan=False)
+        if self._ends_mid_record():
+            # A crash left a partial last line; end it so this record stays readable.
+            line = "\n" + line
         fd = os.open(self.path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
         with os.fdopen(fd, "a", encoding="utf-8") as handle:
             handle.write(line + "\n")
+
+    def _ends_mid_record(self) -> bool:
+        try:
+            with self.path.open("rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                if handle.tell() == 0:
+                    return False
+                handle.seek(-1, os.SEEK_END)
+                return handle.read(1) != b"\n"
+        except FileNotFoundError:
+            return False
 
     def read(self) -> list[Observation]:
         if not self.path.exists():

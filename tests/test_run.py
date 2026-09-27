@@ -82,6 +82,23 @@ def test_rtsp_credentials_from_environment(monkeypatch: pytest.MonkeyPatch) -> N
     assert url == "rtsp://viewer:p%40ss%3Aword@camera.lan:554/stream1"
 
 
+def test_rtsp_credentials_keep_ipv6_brackets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression (#3 review)."""
+    monkeypatch.setenv("CAM_USER", "viewer")
+    source = SourceConfig(kind="rtsp", url="rtsp://[fd00::20]:554/stream", username_env="CAM_USER")
+    assert sources.rtsp_url_with_credentials(source) == "rtsp://viewer@[fd00::20]:554/stream"
+
+
+def test_exif_orientation_is_applied() -> None:
+    """Regression (#3 review): rotate by EXIF before the tag is dropped."""
+    image = Image.new("RGB", (400, 200), (10, 20, 30))
+    exif = Image.Exif()
+    exif[0x0112] = 6  # rotate 90 degrees clockwise when displayed
+    output = io.BytesIO()
+    image.save(output, format="JPEG", exif=exif)
+    assert _dims(image_ops.stored_view(output.getvalue())) == (200, 400)
+
+
 def test_rtsp_failures(monkeypatch: pytest.MonkeyPatch) -> None:
     source = SourceConfig(kind="rtsp", url="rtsp://camera.lan/stream")
     monkeypatch.setattr(sources.shutil, "which", lambda name: None)
@@ -255,11 +272,14 @@ def test_run_lock_is_exclusive(tmp_path: Path) -> None:
 
 def test_observation_log_skips_torn_lines(tmp_path: Path) -> None:
     config = _setup(tmp_path)
-    transport = ScriptedTransport(_present_reply(), _present_reply())
+    transport = ScriptedTransport(*[_present_reply()] * 4)
     run_once(config, "front-door", now=T0, fetch=_fetch(), transport=transport)
     with config.observations.open("a", encoding="utf-8") as handle:
         handle.write('{"sample_id": "tor')
     assert len(ObservationLog(config.observations).read()) == 1
+    # Regression (#3 review): the next record is not glued to the fragment.
+    run_once(config, "front-door", now=T0 + HALF_HOUR, fetch=_fetch(), transport=transport)
+    assert len(ObservationLog(config.observations).read()) == 2
 
 
 def test_unknown_installation(tmp_path: Path) -> None:
