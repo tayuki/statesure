@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -300,9 +301,23 @@ def test_event_metrics(tmp_path: Path, package_recipe: Recipe) -> None:
         at = T0 + timedelta(minutes=30 * index)
         sample_id = b.add(truth, {"primary": D(value)}, at=at)
         observations.append(presence_obs(package_recipe, value, at, sample_id=sample_id))
-    result = replay(observations, {package_recipe.id: package_recipe.confirmation})
+    result = replay(observations, {package_recipe.fingerprint: package_recipe.confirmation})
     metrics = event_metrics(result.events, b.store.records(package_recipe.id))
     assert metrics.events == 2
     assert metrics.labeled_events == 2
     assert metrics.false_events == 0
     assert metrics.latency_seconds_max == 1800
+
+
+def test_report_ignores_other_recipe_versions(tmp_path: Path, package_recipe: Recipe) -> None:
+    """Regression (statesure#1 review): old versions do not affect the report."""
+    b = Builder(tmp_path, package_recipe)
+    _fill_good(b, "install-a")
+    old = replace(package_recipe, fingerprint="0" * 16)
+    stale = Builder(tmp_path / "unused", old)
+    stale.store = b.store
+    for _ in range(40):
+        stale.add("present", {"confirmed": D("absent")})
+    report = build_report(package_recipe, b.store.records(package_recipe.id))
+    assert report.promotions[f"install-a/{JUDGE}/{SIGNAL}"].status == "eligible"
+    assert {m.key.recipe_fingerprint for m in report.signals} == {package_recipe.fingerprint}

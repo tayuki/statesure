@@ -193,3 +193,19 @@ def test_jev_missing_answers(package_recipe: Recipe) -> None:
 def test_error_readings_are_errors(package_recipe: Recipe) -> None:
     readings = error_readings(package_recipe, "timeout")
     assert {r.outcome for r in readings.values()} == {Outcome.ERROR}
+
+
+@pytest.mark.parametrize(
+    "quality",
+    [
+        {"analysis_confidence": "high"},
+        {"visibility": "unknown", "analysis_confidence": "high"},
+        {"visibility": "good", "analysis_confidence": 3},
+    ],
+)
+def test_missing_or_invalid_quality_abstains(package_recipe: Recipe, quality: dict) -> None:
+    """Regression (statesure#1 review): abstain rules cannot be skipped."""
+    content = json.dumps({**quality, "package_present": "absent", "package_count": 0})
+    _, signals = normalize_vlm_json(package_recipe, content)
+    assert {r.outcome for r in signals.values()} == {Outcome.ABSTAINED}
+    assert signals["package_present"].reason == "missing_quality"

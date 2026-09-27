@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import random
+from dataclasses import replace
 from datetime import timedelta
 
-from statesure.confirm import SignalState, change_event_type, confirmed_reading, replay, step
+from statesure.confirm import (
+    SignalState,
+    StateKey,
+    change_event_type,
+    confirmed_reading,
+    replay,
+    step,
+)
 from statesure.readings import Outcome, SignalReading
 from statesure.recipe import Confirmation, Recipe
 
 from .conftest import T0, presence_obs
 
 CFG = Confirmation(samples=2, max_gap=timedelta(hours=2))
-KEY = ("cam-a", "install-a", "package_at_door", "judge", "package_present")
+KEY = StateKey("cam-a", "install-a", "package_at_door", "fp", "judge", "package_present")
 HALF_HOUR = timedelta(minutes=30)
 
 
@@ -100,7 +108,7 @@ def test_replay_is_deterministic(package_recipe: Recipe) -> None:
     observations = [
         presence_obs(package_recipe, v, T0 + HALF_HOUR * i) for i, v in enumerate(values)
     ]
-    configs = {package_recipe.id: package_recipe.confirmation}
+    configs = {package_recipe.fingerprint: package_recipe.confirmation}
     expected = replay(observations, configs)
     shuffled = observations[:]
     random.Random(7).shuffle(shuffled)
@@ -113,7 +121,9 @@ def test_replay_prefers_merged_and_tracks_per_sample(package_recipe: Recipe) -> 
     first = presence_obs(package_recipe, "present", T0)
     merged = presence_obs(package_recipe, "absent", T0, stage="merged", sample_id=first.sample_id)
     second = presence_obs(package_recipe, "absent", T0 + HALF_HOUR)
-    result = replay([first, merged, second], {package_recipe.id: package_recipe.confirmation})
+    result = replay(
+        [first, merged, second], {package_recipe.fingerprint: package_recipe.confirmation}
+    )
     assert result.events[0].to_value == "absent"
     judge = first.judge_id
     assert result.confirmed_at_sample[(first.sample_id, judge, "package_present")] is None
@@ -125,7 +135,7 @@ def test_replay_keys_by_installation(package_recipe: Recipe) -> None:
         presence_obs(package_recipe, "present", T0, install="install-a"),
         presence_obs(package_recipe, "present", T0 + HALF_HOUR, install="install-b"),
     ]
-    result = replay(observations, {package_recipe.id: package_recipe.confirmation})
+    result = replay(observations, {package_recipe.fingerprint: package_recipe.confirmation})
     # Changing the installation starts a new state instead of continuing a streak.
     assert result.events == ()
     assert len(result.states) == 2
@@ -134,3 +144,18 @@ def test_replay_keys_by_installation(package_recipe: Recipe) -> None:
 def test_confirmed_reading() -> None:
     assert confirmed_reading(None).outcome is Outcome.ABSTAINED
     assert confirmed_reading("present") == SignalReading.decided("present")
+
+
+def test_replay_keeps_recipe_versions_apart(package_recipe: Recipe) -> None:
+    """Regression (statesure#1 review): versions never share a streak."""
+    old = presence_obs(package_recipe, "present", T0)
+    new = presence_obs(package_recipe, "present", T0 + HALF_HOUR)
+    old = replace(old, recipe_fingerprint="0" * 16)
+    configs = {
+        package_recipe.fingerprint: package_recipe.confirmation,
+        "0" * 16: package_recipe.confirmation,
+    }
+    assert replay([old, new], configs).events == ()
+    # An unknown version is skipped instead of borrowing another version's settings.
+    only_current = replay([old, new], {package_recipe.fingerprint: package_recipe.confirmation})
+    assert len(only_current.states) == 1

@@ -99,7 +99,7 @@ def _validate(args: argparse.Namespace) -> int:
 
 def _replay(args: argparse.Namespace) -> int:
     recipes = [recipe_module.load(path) for path in args.recipe]
-    configs = {item.id: item.confirmation for item in recipes}
+    configs = {item.fingerprint: item.confirmation for item in recipes}
     observations = [Observation.from_dict(row) for row in _read_jsonl(args.observations)]
     result = replay(observations, configs)
     for event in result.events:

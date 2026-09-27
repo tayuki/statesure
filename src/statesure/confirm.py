@@ -13,14 +13,23 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
+from typing import NamedTuple
 
 from .readings import Observation, SignalReading
 from .recipe import Confirmation
 
 EVENT_SCHEMA_VERSION = 1
 
-StateKey = tuple[str, str, str, str, str]
-"""(source_id, install_fingerprint, recipe_id, judge_id, signal)"""
+
+class StateKey(NamedTuple):
+    """Confirmation state is never shared across installations or recipe versions."""
+
+    source_id: str
+    install_fingerprint: str
+    recipe_id: str
+    recipe_fingerprint: str
+    judge_id: str
+    signal: str
 
 
 @dataclass(frozen=True)
@@ -61,14 +70,9 @@ class ChangeEvent:
     confirmation_samples: int
 
     def to_dict(self) -> dict[str, object]:
-        source_id, install, recipe_id, judge_id, signal = self.key
         return {
             "schema_version": EVENT_SCHEMA_VERSION,
-            "source_id": source_id,
-            "install_fingerprint": install,
-            "recipe_id": recipe_id,
-            "judge_id": judge_id,
-            "signal": signal,
+            **self.key._asdict(),
             "event_type": self.event_type,
             "from_value": self.from_value,
             "to_value": self.to_value,
@@ -167,7 +171,8 @@ def replay(
     """Rebuild the confirmation ledger from observations.
 
     For each (sample, judge) the ``merged`` observation is used when present,
-    otherwise ``primary``. ``configs`` maps recipe_id to its confirmation settings.
+    otherwise ``primary``. ``configs`` maps a recipe *fingerprint* to its
+    confirmation settings; observations of other versions are skipped.
     """
     chosen: dict[tuple[str, str], Observation] = {}
     for observation in observations:
@@ -184,14 +189,15 @@ def replay(
     events: list[ChangeEvent] = []
     confirmed_at_sample: dict[tuple[str, str, str], str | int | None] = {}
     for observation in ordered:
-        config = configs.get(observation.recipe_id)
+        config = configs.get(observation.recipe_fingerprint)
         if config is None:
             continue
         for signal, reading in observation.signals.items():
-            key: StateKey = (
+            key = StateKey(
                 observation.source_id,
                 observation.install_fingerprint,
                 observation.recipe_id,
+                observation.recipe_fingerprint,
                 observation.judge_id,
                 signal,
             )

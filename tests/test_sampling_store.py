@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import stat
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -174,3 +175,21 @@ def test_observation_must_match_sample(tmp_path: Path, package_recipe: Recipe) -
     with pytest.raises(StoreError) as info:
         store.add_observation(other)
     assert info.value.code == "observation_sample_mismatch"
+
+
+def test_labels_require_the_same_recipe_version(tmp_path: Path, package_recipe: Recipe) -> None:
+    """Regression (statesure#1 review): labels follow the sample's recipe version."""
+    store = _store(tmp_path)
+    sample_id = _add(store, package_recipe)
+    newer = replace(package_recipe, fingerprint="f" * 16)
+    with pytest.raises(StoreError) as info:
+        store.add_label(
+            newer,
+            sample_id,
+            "package_present",
+            "present",
+            assessable=True,
+            reviewer_confidence="confident",
+            labeled_at=T0,
+        )
+    assert info.value.code == "label_recipe_mismatch"

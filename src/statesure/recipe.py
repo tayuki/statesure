@@ -36,8 +36,8 @@ _PLACEHOLDER = re.compile(r"\{\{\s*([^}]*?)\s*\}\}")
 _ALLOWED_PLACEHOLDERS = frozenset({"zone.description", "target.hint"})
 _DURATION = re.compile(r"^(\d+)(s|m|h|d)$")
 
-# Terms that would make a prompt ask about people. A sentence may still
-# mention them when it tells the judge to ignore people (see _NEGATION_*).
+# Terms that would make a prompt ask about people or for free text. Prompts
+# are checked with no exceptions after removing the fixed safety phrases below.
 _PERSON_TERMS = re.compile(
     r"\b(person|persons|people|faces?|man|men|woman|women|boys?|girls?|child|children|"
     r"kids?|clothing|clothes|emotions?|behaviou?rs?|identity|identities|gender)\b"
@@ -49,10 +49,28 @@ _FREE_TEXT_REQUEST = re.compile(
     r"|説明して|記述して|描写して|要約して",
     re.IGNORECASE,
 )
-_NEGATION_EN = re.compile(r"\b(ignore|never|do not|don't|must not|without)\b", re.IGNORECASE)
-# Japanese puts the negation after the object ("人物は無視して"), so a Japanese
-# negation anywhere in the sentence allows the mention.
-_NEGATION_JA = re.compile(r"無視|しないで|しない|禁止")
+
+# Safety phrases a prompt may use to tell the judge what NOT to do. Only these
+# exact shapes are exempt; a free-form negation elsewhere is not.
+_EN_TERM = (
+    r"(?:people|persons|faces?|identity|identities|clothing|clothes|emotions?|"
+    r"behaviou?rs?|gender|appearance)"
+)
+_JA_TERM = r"(?:人|人物|顔|個人|服装|感情|行動|身元)"
+_SAFETY_PHRASES = (
+    re.compile(r"\bignore\s+(?:all\s+)?(?:people|persons)(?:\s+(?:entirely|completely))?", re.I),
+    re.compile(
+        rf"\b(?:never|do\s+not|don't|must\s+not)\s+(?:describe|mention|report|identify|infer)"
+        rf"\s+(?:any\s+)?{_EN_TERM}(?:\s*(?:,\s*(?:or\s+|and\s+)?|\s+or\s+|\s+and\s+){_EN_TERM})*",
+        re.I,
+    ),
+    re.compile(rf"{_JA_TERM}は(?:完全に)?無視(?:して|する|し)"),
+    re.compile(rf"{_JA_TERM}(?:[、・や]{_JA_TERM})*(?:を|は)(?:記述|説明|判定|推測|記録)?しない"),
+)
+# "Do not ignore people" or "無視しない" reverses a safety phrase.
+_REVERSED_SAFETY = re.compile(
+    r"\b(?:not|never|don't|no\s+longer)\s+ignore\b|無視しない", re.IGNORECASE
+)
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?。！？])\s+|(?<=[。！？])|\n\s*\n")
 
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
@@ -440,22 +458,14 @@ def _check_prompt(texts: Mapping[str, str]) -> None:
             sentence = " ".join(_PLACEHOLDER.sub(" ", sentence or "").split())
             if not sentence:
                 continue
-            # A term is allowed only after a negation in the same sentence, as in
-            # "Ignore people entirely; never describe faces".
-            negation = _NEGATION_EN.search(sentence)
-            if _NEGATION_JA.search(sentence):
-                allowed_from = 0
-            elif negation:
-                allowed_from = negation.start()
-            else:
-                allowed_from = len(sentence) + 1
-            for pattern, code in (
-                (_PERSON_TERMS, "prompt_targets_people"),
-                (_FREE_TEXT_REQUEST, "prompt_requests_free_text"),
-            ):
-                for match in pattern.finditer(sentence):
-                    if match.start() < allowed_from:
-                        raise RecipeError(code)
+            if _REVERSED_SAFETY.search(sentence):
+                raise RecipeError("prompt_targets_people")
+            for phrase in _SAFETY_PHRASES:
+                sentence = phrase.sub(" ", sentence)
+            if _PERSON_TERMS.search(sentence):
+                raise RecipeError("prompt_targets_people")
+            if _FREE_TEXT_REQUEST.search(sentence):
+                raise RecipeError("prompt_requests_free_text")
 
 
 def _require_value(signals: Mapping[str, SignalSpec], name: object, value: object) -> None:

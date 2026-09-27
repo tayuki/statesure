@@ -373,7 +373,7 @@ def event_metrics(events: Iterable[ChangeEvent], records: Sequence[SampleRecord]
         total += 1
         latencies.append((event.confirmed_at - event.first_seen_at).total_seconds())
         record = by_sample.get(event.confirming_sample_id)
-        signal = event.key[4]
+        signal = event.key.signal
         label = record.labels.get(signal) if record else None
         if label is None or not label.assessable or label.truth in (None, HUMAN_UNCERTAIN):
             continue
@@ -397,7 +397,12 @@ def build_report(
     judge_id: str | None = None,
 ) -> Report:
     """Metrics for every (installation, judge, stage, signal) of one recipe."""
-    records = [r for r in records if r.recipe_id == recipe.id]
+    # Other versions of the recipe never influence this version's report.
+    records = [
+        r
+        for r in records
+        if r.recipe_id == recipe.id and r.recipe_fingerprint == recipe.fingerprint
+    ]
     report = Report()
     installs = sorted({r.install_fingerprint for r in records})
     judges = sorted({key[0] for r in records for key in r.readings})

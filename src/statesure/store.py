@@ -223,7 +223,8 @@ class LabelStore:
         if label_source != "human":
             raise StoreError("only_human_labels")
         sample = self._sample_row(sample_id)
-        if sample["recipe_id"] != recipe.id:
+        if sample["recipe_id"] != recipe.id or sample["recipe_fingerprint"] != recipe.fingerprint:
+            # Labels are validated against the schema of the version that produced the sample.
             raise StoreError("label_recipe_mismatch")
         if signal not in recipe.signal_names:
             raise StoreError("unknown_signal")

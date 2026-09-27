@@ -54,7 +54,16 @@ def normalize_vlm_json(
         if isinstance(obj.get(field), str) and obj[field] in allowed
     }
     signals = {spec.name: _read_vlm_value(spec, obj) for spec in recipe.signals}
-    if any(quality.get(rule.field) == rule.equals for rule in recipe.abstain_when):
+    if len(quality) != len(recipe.quality):
+        # A declared quality field is missing or out of schema, so the recipe's
+        # abstain rules cannot be evaluated. Nothing from this reply is accepted.
+        signals = {
+            name: reading
+            if reading.outcome is Outcome.ERROR
+            else SignalReading.abstained("missing_quality")
+            for name, reading in signals.items()
+        }
+    elif any(quality.get(rule.field) == rule.equals for rule in recipe.abstain_when):
         signals = {
             name: reading
             if reading.outcome is Outcome.ERROR
