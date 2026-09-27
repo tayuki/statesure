@@ -12,8 +12,20 @@ results to Home Assistant over MQTT discovery. The judge is pluggable: a local
 vision-language model behind an OpenAI-compatible API, a Jev-style decision
 server such as djev, or Frigate's own state classification results.
 
-> **Status: pre-alpha.** Nothing is usable yet. The design is being written in
-> the open; see the roadmap below.
+> **Status: pre-alpha.** The offline core (phase 1) exists: recipes, reading
+> normalization, confirmation, a local label store, metrics and evaluation cards.
+> It does not capture images or call any model yet.
+
+## Try the offline core
+
+```bash
+python -m pip install -e ".[dev]"
+statesure validate recipes/*.yaml
+statesure replay --observations observations.jsonl --recipe recipes/package_at_door.yaml
+statesure report --db labels.sqlite --recipe recipes/package_at_door.yaml --tz UTC
+```
+
+No command opens a network connection.
 
 ## What it does (planned)
 
@@ -38,7 +50,7 @@ server such as djev, or Frigate's own state classification results.
 
 ## Roadmap
 
-1. Core: recipes, normalization, confirmation, label store, metrics (offline CLI)
+1. Core: recipes, normalization, confirmation, label store, metrics (offline CLI) — done
 2. Judges and sources: OpenAI-compatible VLM, Jev-style API, Frigate, RTSP
 3. Daemon and MQTT discovery output
 4. Promotion workflow, evaluation cards, first recipes

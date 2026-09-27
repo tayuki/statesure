@@ -1,0 +1,47 @@
+schema: statesure.recipe/v1
+id: trash_bin_out
+version: 1
+title: {en: Trash bin put out, ja: ゴミ出し容器が出ている}
+signals:
+  bin_present:
+    type: presence
+    question: {en: "Is the collection bin placed at its set-out spot?"}
+  bin_location:
+    type: enum
+    values: [none, set_out_spot, other]
+    zones_from: install
+    question: {en: "Where is the collection bin?"}
+quality:
+  visibility: [good, partial, poor]
+  analysis_confidence: [high, medium, low]
+abstain_when:
+  - {field: visibility, equals: poor}
+  - {field: analysis_confidence, equals: low}
+implications:
+  - when: {signal: bin_present, equals: absent}
+    set: {bin_location: none}
+  - when: {signal: bin_present, equals: present}
+    fix:
+      bin_location: {if_equals: none, abstain: true}
+  - when: {signal: bin_present, abstained: true}
+    abstain: [bin_location]
+prompt:
+  en: |
+    Judge only objects and places. Ignore people entirely; never describe faces,
+    identity, clothing, emotion or behaviour.
+    Target: the household trash collection bin. {{ target.hint }}
+    Set-out spot: {{ zone.description }}.
+    Judge the bin by its place and shape, not by its colour, because lighting changes colours.
+    Do not confuse the bin with bags, other bins, shadows or items on the public road.
+    If you cannot see the set-out spot clearly, answer "uncertain".
+    Reply with JSON only, using these keys: visibility, analysis_confidence,
+    bin_present, bin_location.
+confirmation: {samples: 2, max_gap: 2h}
+min_probability: null
+free_text: false
+promotion:
+  positive: {signal: bin_present, value: present}
+  min_positive: 20
+  min_negative: 50
+  recall_lower_bound: 0.80
+  precision_lower_bound: 0.90

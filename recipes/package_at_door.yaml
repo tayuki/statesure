@@ -1,0 +1,50 @@
+schema: statesure.recipe/v1
+id: package_at_door
+version: 1
+title: {en: Package at the door, ja: 玄関の宅配物}
+signals:
+  package_present:
+    type: presence
+    question: {en: "Is there a package in the target area?"}
+  package_count:
+    type: count
+    max: 10
+    question: {en: "How many packages are in the target area?"}
+  package_location:
+    type: enum
+    values: [none, doorstep, side, walkway, multiple]
+    zones_from: install
+    question: {en: "Where is the package?"}
+quality:
+  visibility: [good, partial, poor]
+  analysis_confidence: [high, medium, low]
+abstain_when:
+  - {field: visibility, equals: poor}
+  - {field: analysis_confidence, equals: low}
+implications:
+  - when: {signal: package_present, equals: absent}
+    set: {package_count: 0, package_location: none}
+  - when: {signal: package_present, equals: present}
+    fix:
+      package_count: {if_equals: 0, set: 1}
+      package_location: {if_equals: none, abstain: true}
+  - when: {signal: package_present, abstained: true}
+    abstain: [package_count, package_location]
+prompt:
+  en: |
+    Judge only objects and places. Ignore people entirely; never describe faces,
+    identity, clothing, emotion or behaviour.
+    Target area: {{ zone.description }}. {{ target.hint }}
+    Do not count shadows, reflections, or items outside the target area.
+    If you cannot see the target area clearly, answer "uncertain".
+    Reply with JSON only, using these keys: visibility, analysis_confidence,
+    package_present, package_count, package_location.
+confirmation: {samples: 2, max_gap: 2h}
+min_probability: null
+free_text: false
+promotion:
+  positive: {signal: package_present, value: present}
+  min_positive: 20
+  min_negative: 50
+  recall_lower_bound: 0.80
+  precision_lower_bound: 0.90

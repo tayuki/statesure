@@ -1,0 +1,52 @@
+schema: statesure.recipe/v1
+id: stairs_obstruction
+version: 1
+title: {en: Objects left on the stairs, ja: 階段の置き物}
+signals:
+  object_present:
+    type: presence
+    question: {en: "Is any object left on the stair treads or the landing?"}
+  object_count:
+    type: count
+    max: 10
+    question: {en: "How many objects are left on the stairs?"}
+  object_location:
+    type: enum
+    values: [none, lower_steps, middle_steps, upper_steps, landing, multiple]
+    question: {en: "Where on the stairs are the objects?"}
+quality:
+  visibility: [good, partial, poor]
+  analysis_confidence: [high, medium, low]
+  coverage: [good, partial, none]
+abstain_when:
+  - {field: visibility, equals: poor}
+  - {field: analysis_confidence, equals: low}
+  - {field: coverage, equals: none}
+implications:
+  - when: {signal: object_present, equals: absent}
+    set: {object_count: 0, object_location: none}
+  - when: {signal: object_present, equals: present}
+    fix:
+      object_count: {if_equals: 0, set: 1}
+      object_location: {if_equals: none, abstain: true}
+  - when: {signal: object_present, abstained: true}
+    abstain: [object_count, object_location]
+prompt:
+  en: |
+    Judge only objects on the stair treads and the landing. Ignore people entirely;
+    never describe faces, identity, clothing, emotion or behaviour.
+    {{ target.hint }}
+    Fixed parts of the building, handrails and shadows are not objects.
+    Do not judge anything outside the frame.
+    If the stairs are not visible, set coverage to "none".
+    Reply with JSON only, using these keys: visibility, analysis_confidence, coverage,
+    object_present, object_count, object_location.
+confirmation: {samples: 2, max_gap: 2h}
+min_probability: null
+free_text: false
+promotion:
+  positive: {signal: object_present, value: present}
+  min_positive: 20
+  min_negative: 50
+  recall_lower_bound: 0.80
+  precision_lower_bound: 0.90
