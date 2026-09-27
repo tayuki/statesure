@@ -1,7 +1,7 @@
-"""Offline command line interface.
+"""Command line interface.
 
-No command in this module opens a network connection. Errors are reported as
-fixed codes; input content is never echoed.
+Only ``run-once`` opens network connections (to the configured sources and
+judges). Errors are reported as fixed codes; input content is never echoed.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from . import recipe as recipe_module
 from .card import CAMERA_KINDS, JUDGE_KINDS, build_card
 from .confirm import replay
 from .errors import InputError, StatesureError
+from .install import is_local_url, load_install
 from .metrics import build_report
 from .readings import Observation
 from .store import LabelStore
@@ -71,6 +72,11 @@ def _parser() -> argparse.ArgumentParser:
     card.add_argument("--install", help="installation fingerprint (required if several)")
     card.add_argument("--tz", default="UTC")
     card.set_defaults(handler=_card)
+
+    run = commands.add_parser("run-once", help="capture, judge and record one sample")
+    run.add_argument("--config", required=True, type=Path)
+    run.add_argument("--installation", help="run only this installation")
+    run.set_defaults(handler=_run_once)
 
     purge = commands.add_parser("purge", help="delete expired images")
     purge.add_argument("--db", required=True, type=Path)
@@ -156,6 +162,30 @@ def _card(args: argparse.Namespace) -> int:
         camera_kind=args.camera_kind,
     )
     _emit(card, indent=2)
+    return 0
+
+
+def _run_once(args: argparse.Namespace) -> int:
+    from .pipeline import run_lock, run_once
+
+    config = load_install(args.config)
+    names = [args.installation] if args.installation else sorted(config.installations)
+    for name in names:
+        if name not in config.installations:
+            raise InputError("unknown_installation")
+    for name in names:
+        installation = config.installations[name]
+        judge = config.judges[installation.judge]
+        if not judge.is_local:
+            _emit({"warning": "judge_not_local", "installation": name}, sys.stderr)
+        if not is_local_url(installation.source.url):
+            _emit({"warning": "source_not_local", "installation": name}, sys.stderr)
+    with run_lock(config.store) as acquired:
+        if not acquired:
+            _emit({"status": "busy"})
+            return 0
+        for name in names:
+            _emit(run_once(config, name, now=datetime.now(config.timezone)).to_dict())
     return 0
 
 

@@ -15,7 +15,7 @@ from ..normalize import normalize_vlm_json
 from ..recipe import ABSTAIN_WORDS, Recipe
 from .base import JudgeError, JudgeResult, Transport, data_url, post_json
 
-MAX_IMAGES = 4
+MAX_IMAGES = 5  # full frame plus up to four crops
 
 
 class OpenAIVisionJudge:

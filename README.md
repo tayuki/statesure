@@ -25,7 +25,21 @@ statesure replay --observations observations.jsonl --recipe recipes/package_at_d
 statesure report --db labels.sqlite --recipe recipes/package_at_door.yaml --tz UTC
 ```
 
-No command opens a network connection.
+These commands never open a network connection.
+
+## Run one cycle
+
+Copy `examples/install.example.yaml`, keep the copy private, and point it at your
+Frigate (or RTSP / image URL) and a local judge:
+
+```bash
+statesure run-once --config install.yaml
+```
+
+Each run captures one frame, asks the judge, re-checks with crops when needed,
+appends the structured result to an observation log (no pixels), updates the
+confirmed state and, for samples chosen for review, keeps the image with an
+expiry. A warning is printed if a judge or source is outside your network.
 
 ## What it does (planned)
 
@@ -51,7 +65,7 @@ No command opens a network connection.
 ## Roadmap
 
 1. Core: recipes, normalization, confirmation, label store, metrics (offline CLI) — done
-2. Judges and sources: OpenAI-compatible VLM, Jev-style API, Frigate, RTSP
+2. Judges and sources: OpenAI-compatible VLM, Jev-style API, Frigate, RTSP — in progress
 3. Daemon and MQTT discovery output
 4. Promotion workflow, evaluation cards, first recipes
 5. First release
