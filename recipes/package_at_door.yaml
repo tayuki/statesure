@@ -37,8 +37,6 @@ prompt:
     Target area: {{ zone.description }}. {{ target.hint }}
     Do not count shadows, reflections, or items outside the target area.
     If you cannot see the target area clearly, answer "uncertain".
-    Reply with JSON only, using these keys: visibility, analysis_confidence,
-    package_present, package_count, package_location.
 confirmation: {samples: 2, max_gap: 2h}
 min_probability: null
 free_text: false

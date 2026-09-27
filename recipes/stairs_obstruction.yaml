@@ -39,8 +39,6 @@ prompt:
     Fixed parts of the building, handrails and shadows are not objects.
     Do not judge anything outside the frame.
     If the stairs are not visible, set coverage to "none".
-    Reply with JSON only, using these keys: visibility, analysis_confidence, coverage,
-    object_present, object_count, object_location.
 confirmation: {samples: 2, max_gap: 2h}
 min_probability: null
 free_text: false

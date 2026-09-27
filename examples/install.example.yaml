@@ -1,0 +1,36 @@
+# Example installation config. Copy it, keep it private, and adjust the names.
+# API keys are never written here: a judge names an environment variable.
+schema: statesure.install/v1
+timezone: Europe/London
+store: data/labels.sqlite
+recipes_dir: ../recipes
+evaluation:
+  save_all: true        # store every sample during an evaluation period
+  retention_days: 7     # images are deleted after this many days
+  routine_rate: 0.1667  # share of ordinary samples shown first for labeling
+
+judges:
+  local-vlm:
+    kind: vlm_openai
+    url: http://vlm.lan:8000/v1/chat/completions
+    model: your-vision-model
+    json_schema: true
+  local-djev:
+    kind: jev
+    url: http://djev.lan:8000/v1/systemone
+    model: pin-the-exact-model-version
+
+installations:
+  front-door:
+    source: {kind: frigate, url: http://frigate.lan:5000, camera: front_door}
+    recipe: package_at_door
+    judge: local-vlm
+    zone: {description: the step in front of the entrance door}
+    target: {hint: ""}
+    zones:
+      doorstep: on the step itself
+      side: beside the step
+    roi:                 # normalized x0, y0, x1, y1 for the focused re-check
+      - [0.0, 0.2, 0.68, 1.0]
+      - [0.32, 0.2, 1.0, 1.0]
+    camera_kind: outdoor
