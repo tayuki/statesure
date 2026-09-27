@@ -41,6 +41,16 @@ appends the structured result to an observation log (no pixels), updates the
 confirmed state and, for samples chosen for review, keeps the image with an
 expiry. A warning is printed if a judge or source is outside your network.
 
+## Label samples
+
+```bash
+statesure review --config install.yaml
+```
+
+Open the printed `http://127.0.0.1:18120/` address. The page listens on loopback
+only; from another device, use an SSH tunnel. It never shows the judge's answer,
+so your labels are not anchored to it. Expired images are not shown.
+
 ## What it does (planned)
 
 - **Recipes**: a small YAML file per question, with fixed answer choices.

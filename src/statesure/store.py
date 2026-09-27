@@ -94,6 +94,7 @@ class SampleRecord:
     stratum: str
     priority: str
     inclusion_probability: float
+    display_key: float
     readings: Mapping[tuple[str, str, str], SignalReading]
     """(judge_id, stage, signal) -> reading"""
     labels: Mapping[str, Label]
@@ -272,10 +273,12 @@ class LabelStore:
                 purged += 1
         return purged
 
-    def image_path(self, sample_id: str) -> Path | None:
-        """Path of a sample's image, or None if absent or deleted."""
+    def image_path(self, sample_id: str, now: datetime | None = None) -> Path | None:
+        """Path of a sample's image, or None if absent, deleted or (given ``now``) expired."""
         row = self._sample_row(sample_id)
         if row["image_path"] is None or row["image_deleted_at"] is not None:
+            return None
+        if now is not None and datetime.fromisoformat(row["image_retention_until"]) <= now:
             return None
         return self.frames_dir / row["image_path"]
 
@@ -317,6 +320,7 @@ class LabelStore:
                 stratum=row["stratum"],
                 priority=row["priority"],
                 inclusion_probability=row["inclusion_probability"],
+                display_key=row["display_key"],
                 readings=readings.get(row["sample_id"], {}),
                 labels=labels.get(row["sample_id"], {}),
             )

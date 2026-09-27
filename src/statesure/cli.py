@@ -78,6 +78,11 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--installation", help="run only this installation")
     run.set_defaults(handler=_run_once)
 
+    review = commands.add_parser("review", help="label stored samples in a local web page")
+    review.add_argument("--config", required=True, type=Path)
+    review.add_argument("--port", type=int, default=18120)
+    review.set_defaults(handler=_review)
+
     purge = commands.add_parser("purge", help="delete expired images")
     purge.add_argument("--db", required=True, type=Path)
     purge.set_defaults(handler=_purge)
@@ -186,6 +191,21 @@ def _run_once(args: argparse.Namespace) -> int:
             return 0
         for name in names:
             _emit(run_once(config, name, now=datetime.now(config.timezone)).to_dict())
+    return 0
+
+
+def _review(args: argparse.Namespace) -> int:
+    from .review import ReviewApp, serve
+
+    config = load_install(args.config)
+    server = serve(ReviewApp(LabelStore(config.store), config.recipes_dir), port=args.port)
+    _emit({"review": f"http://127.0.0.1:{server.server_address[1]}/"}, sys.stderr)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
     return 0
 
 
