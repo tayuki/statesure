@@ -1,20 +1,15 @@
-"""Shared judge types and a small, strict HTTP transport.
-
-The transport uses only the standard library: no proxies from the environment,
-no redirects, a response size limit, and errors that never include the request
-body, the response body or credentials.
-"""
+"""Shared judge types and the default transport (see ``statesure.http``)."""
 
 from __future__ import annotations
 
+import base64
 import json
 import os
-import urllib.error
-import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from .. import http
 from ..errors import StatesureError
 from ..install import JudgeConfig
 from ..readings import SignalReading
@@ -44,27 +39,19 @@ class Judge(Protocol):
         ...
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
-
-
-_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
-
-
 def http_post(url: str, headers: Mapping[str, str], body: bytes, timeout_s: float) -> bytes:
-    """POST ``body`` and return the response body (standard library only)."""
-    request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
+    """POST ``body`` and return the response body."""
     try:
-        with _OPENER.open(request, timeout=timeout_s) as response:
-            data = response.read(MAX_RESPONSE_BYTES + 1)
-    except urllib.error.HTTPError as exc:
-        raise JudgeError(f"http_{exc.code}") from None
-    except (urllib.error.URLError, TimeoutError, OSError):
-        raise JudgeError("transport_failed") from None
-    if len(data) > MAX_RESPONSE_BYTES:
-        raise JudgeError("response_too_large")
-    return data
+        return http.request(
+            "POST",
+            url,
+            headers=headers,
+            body=body,
+            timeout_s=timeout_s,
+            max_bytes=MAX_RESPONSE_BYTES,
+        )
+    except http.HttpError as exc:
+        raise JudgeError(exc.code) from None
 
 
 def post_json(
@@ -88,8 +75,6 @@ def post_json(
 
 
 def data_url(image: bytes) -> str:
-    import base64
-
     return "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")
 
 

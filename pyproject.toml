@@ -18,7 +18,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Topic :: Home Automation",
 ]
-dependencies = ["PyYAML>=6.0"]
+dependencies = ["PyYAML>=6.0", "Pillow>=11"]
 
 [project.scripts]
 statesure = "statesure.cli:main"

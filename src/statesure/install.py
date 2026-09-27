@@ -64,6 +64,8 @@ class SourceConfig:
     kind: str
     url: str
     camera: str | None = None
+    username_env: str | None = None
+    password_env: str | None = None
 
 
 @dataclass(frozen=True)
@@ -109,6 +111,7 @@ class EvaluationConfig:
 class InstallConfig:
     timezone: ZoneInfo
     store: Path
+    observations: Path
     recipes_dir: Path
     evaluation: EvaluationConfig
     judges: Mapping[str, JudgeConfig]
@@ -130,7 +133,7 @@ def parse_install(data: object, *, base_dir: Path = Path(".")) -> InstallConfig:
     _only(
         doc,
         {"schema", "timezone", "store", "judges", "installations"},
-        {"recipes_dir", "evaluation"},
+        {"recipes_dir", "evaluation", "observations"},
     )
     if doc["schema"] != SCHEMA:
         raise InputError("unsupported_install_schema")
@@ -151,6 +154,7 @@ def parse_install(data: object, *, base_dir: Path = Path(".")) -> InstallConfig:
     return InstallConfig(
         timezone=timezone,
         store=(base_dir / str(doc["store"])).resolve(),
+        observations=(base_dir / str(doc.get("observations", "observations.jsonl"))).resolve(),
         recipes_dir=(base_dir / str(doc.get("recipes_dir", "recipes"))).resolve(),
         evaluation=_evaluation(doc.get("evaluation", {})),
         judges=judges,
@@ -272,7 +276,7 @@ def _installation(name: str, body: object, judges: Mapping[str, JudgeConfig]) ->
 
 def _source(body: object) -> SourceConfig:
     doc = _mapping(body)
-    _only(doc, {"kind", "url"}, {"camera"})
+    _only(doc, {"kind", "url"}, {"camera", "username_env", "password_env"})
     kind = doc["kind"]
     if kind not in SOURCE_KINDS:
         raise InputError("invalid_source_kind")
@@ -291,7 +295,19 @@ def _source(body: object) -> SourceConfig:
             raise InputError("frigate_camera_required")
     elif camera is not None:
         raise InputError("camera_only_for_frigate")
-    return SourceConfig(kind=kind, url=url.rstrip("/"), camera=camera)
+    username_env, password_env = doc.get("username_env"), doc.get("password_env")
+    for name in (username_env, password_env):
+        if name is not None and (kind != "rtsp" or not _ENV.fullmatch(str(name))):
+            raise InputError("invalid_credential_env")
+    if password_env and not username_env:
+        raise InputError("invalid_credential_env")
+    return SourceConfig(
+        kind=kind,
+        url=url.rstrip("/"),
+        camera=camera,
+        username_env=username_env,
+        password_env=password_env,
+    )
 
 
 def _roi(raw: object) -> tuple[tuple[float, float, float, float], ...]:
