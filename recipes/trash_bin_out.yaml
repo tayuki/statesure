@@ -34,8 +34,6 @@ prompt:
     Judge the bin by its place and shape, not by its colour, because lighting changes colours.
     Do not confuse the bin with bags, other bins, shadows or items on the public road.
     If you cannot see the set-out spot clearly, answer "uncertain".
-    Reply with JSON only, using these keys: visibility, analysis_confidence,
-    bin_present, bin_location.
 confirmation: {samples: 2, max_gap: 2h}
 min_probability: null
 free_text: false
