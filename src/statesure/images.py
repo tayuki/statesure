@@ -10,7 +10,7 @@ import io
 import warnings
 from collections.abc import Sequence
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from .errors import StatesureError
 
@@ -38,7 +38,9 @@ def _open(raw: bytes) -> Image.Image:
             raise
         except (OSError, ValueError, Image.DecompressionBombWarning, Image.DecompressionBombError):
             raise ImageError("invalid_image") from None
-    return image.convert("RGB")
+    # Apply the EXIF orientation before re-encoding drops the tag, so pixels and
+    # ROI coordinates match what the camera shows.
+    return ImageOps.exif_transpose(image).convert("RGB")
 
 
 def _encode(image: Image.Image, size: tuple[int, int], *, quality: int, upscale: bool) -> bytes:
