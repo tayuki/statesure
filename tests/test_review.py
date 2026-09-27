@@ -167,6 +167,51 @@ def test_invalid_label_values_are_rejected(running, package_recipe: Recipe) -> N
     assert b"invalid_truth" in data
 
 
+def test_invalid_field_leaves_no_partial_labels(running, package_recipe: Recipe) -> None:
+    """Regression (#4 review): all labels of a sample are written together."""
+    app, store, _, port = running
+    sample_id = _sample(store, package_recipe)
+    fields = {
+        "token": app.token,
+        "signal:package_present": "present",
+        "signal:package_count": "99",
+        "signal:package_location": "doorstep",
+        "reviewer_confidence": "confident",
+    }
+    response, _ = _request(port, "POST", f"/label/{sample_id}", body=urlencode(fields))
+    assert response.status == 400
+    assert store.records()[0].labels == {}
+    assert len(app.queue()) == 1
+
+
+def test_recipe_changes_are_picked_up(tmp_path: Path, package_doc: dict) -> None:
+    """Regression (#4 review): the version guard follows the current file."""
+    import os
+
+    import yaml
+
+    from statesure import recipe as recipe_module
+
+    recipes = tmp_path / "recipes"
+    recipes.mkdir()
+    path = recipes / "package_at_door.yaml"
+    path.write_text(yaml.safe_dump(package_doc), "utf-8")
+    recipe = recipe_module.load(path)
+    store = LabelStore(tmp_path / "store.sqlite")
+    _sample(store, recipe)
+    app = ReviewApp(store, recipes, clock=Clock())
+    assert len(app.queue()) == 1
+    package_doc["version"] = 2
+    path.write_text(yaml.safe_dump(package_doc), "utf-8")
+    os.utime(path, ns=(1, 1))
+    assert app.queue() == []
+    path.unlink()
+    assert app.queue() == []
+    package_doc["version"] = 1
+    path.write_text(yaml.safe_dump(package_doc), "utf-8")
+    assert len(app.queue()) == 1
+
+
 def test_expired_images_are_not_served(running, package_recipe: Recipe) -> None:
     app, store, clock, port = running
     sample_id = _sample(store, package_recipe)

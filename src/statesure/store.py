@@ -220,36 +220,65 @@ class LabelStore:
         labeled_at: datetime,
         label_source: str = "human",
     ) -> None:
-        """Record a human label. Model predictions are never accepted as labels."""
+        """Record one human label. Model predictions are never accepted as labels."""
+        self.add_labels(
+            recipe,
+            sample_id,
+            {signal: truth},
+            assessable=assessable,
+            reviewer_confidence=reviewer_confidence,
+            labeled_at=labeled_at,
+            label_source=label_source,
+        )
+
+    def add_labels(
+        self,
+        recipe: Recipe,
+        sample_id: str,
+        truths: Mapping[str, str | int | None],
+        *,
+        assessable: bool,
+        reviewer_confidence: str,
+        labeled_at: datetime,
+        label_source: str = "human",
+    ) -> None:
+        """Record several labels for one sample: all are validated first, then
+        written in a single transaction, so a sample is never half-labeled."""
         if label_source != "human":
             raise StoreError("only_human_labels")
         sample = self._sample_row(sample_id)
         if sample["recipe_id"] != recipe.id or sample["recipe_fingerprint"] != recipe.fingerprint:
             # Labels are validated against the schema of the version that produced the sample.
             raise StoreError("label_recipe_mismatch")
-        if signal not in recipe.signal_names:
-            raise StoreError("unknown_signal")
         if reviewer_confidence not in REVIEWER_CONFIDENCE:
             raise StoreError("invalid_reviewer_confidence")
         if labeled_at.tzinfo is None:
             raise StoreError("naive_timestamp")
-        if assessable:
-            if truth != HUMAN_UNCERTAIN and not recipe.signal(signal).accepts(truth):
-                raise StoreError("invalid_truth")
-        elif truth is not None:
-            raise StoreError("truth_without_assessable")
+        if not truths:
+            raise StoreError("no_labels")
+        for signal, truth in truths.items():
+            if signal not in recipe.signal_names:
+                raise StoreError("unknown_signal")
+            if assessable:
+                if truth != HUMAN_UNCERTAIN and not recipe.signal(signal).accepts(truth):
+                    raise StoreError("invalid_truth")
+            elif truth is not None:
+                raise StoreError("truth_without_assessable")
         with self._connect() as conn:
-            conn.execute(
+            conn.executemany(
                 "INSERT OR REPLACE INTO labels VALUES (?,?,?,?,?,?,?)",
-                (
-                    sample_id,
-                    signal,
-                    json.dumps(truth),
-                    int(assessable),
-                    reviewer_confidence,
-                    labeled_at.isoformat(),
-                    "human",
-                ),
+                [
+                    (
+                        sample_id,
+                        signal,
+                        json.dumps(truth),
+                        int(assessable),
+                        reviewer_confidence,
+                        labeled_at.isoformat(),
+                        "human",
+                    )
+                    for signal, truth in truths.items()
+                ],
             )
 
     def purge_expired(self, now: datetime) -> int:

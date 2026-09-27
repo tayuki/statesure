@@ -58,22 +58,34 @@ class ReviewApp:
         self.recipes_dir = recipes_dir
         self.token = secrets.token_urlsafe(32)
         self._clock = clock
-        self._recipes: dict[str, Recipe | None] = {}
+        self._recipes: dict[str, tuple[tuple[int, int], Recipe]] = {}
 
     def now(self) -> datetime:
         return self._clock() if self._clock else datetime.now(UTC)
 
     def recipe_for(self, record: SampleRecord) -> Recipe | None:
-        """The current recipe, only if it is the version that produced the sample."""
-        if record.recipe_id not in self._recipes:
+        """The current recipe file, only if it is the version that produced the sample.
+
+        The file is re-read whenever it changes, so edits made while the page is
+        running are honored; failures are not cached.
+        """
+        path = self.recipes_dir / f"{record.recipe_id}.yaml"
+        try:
+            stat = path.stat()
+        except OSError:
+            self._recipes.pop(record.recipe_id, None)
+            return None
+        version = (stat.st_mtime_ns, stat.st_size)
+        cached = self._recipes.get(record.recipe_id)
+        if cached is None or cached[0] != version:
             try:
-                self._recipes[record.recipe_id] = load_recipe(
-                    self.recipes_dir / f"{record.recipe_id}.yaml"
-                )
+                cached = (version, load_recipe(path))
             except StatesureError:
-                self._recipes[record.recipe_id] = None
-        recipe = self._recipes[record.recipe_id]
-        if recipe is None or recipe.fingerprint != record.recipe_fingerprint:
+                self._recipes.pop(record.recipe_id, None)
+                return None
+            self._recipes[record.recipe_id] = cached
+        recipe = cached[1]
+        if recipe.fingerprint != record.recipe_fingerprint:
             return None
         return recipe
 
@@ -101,27 +113,26 @@ class ReviewApp:
             raise StatesureError("recipe_version_unavailable")
         confidence = _one(form, "reviewer_confidence")
         assessable = _one(form, "assessable") != "no"
-        labeled_at = self.now()
+        truths: dict[str, str | int | None] = {}
         for spec in recipe.signals:
             if not assessable:
-                truth: str | int | None = None
+                truths[spec.name] = None
+                continue
+            raw = _one(form, f"signal:{spec.name}")
+            if raw == HUMAN_UNCERTAIN:
+                truths[spec.name] = HUMAN_UNCERTAIN
+            elif spec.type == "count" and raw.isdigit():
+                truths[spec.name] = int(raw)
             else:
-                raw = _one(form, f"signal:{spec.name}")
-                if raw == HUMAN_UNCERTAIN:
-                    truth = HUMAN_UNCERTAIN
-                elif spec.type == "count" and raw.isdigit():
-                    truth = int(raw)
-                else:
-                    truth = raw
-            self.store.add_label(
-                recipe,
-                sample_id,
-                spec.name,
-                truth,
-                assessable=assessable,
-                reviewer_confidence=confidence,
-                labeled_at=labeled_at,
-            )
+                truths[spec.name] = raw
+        self.store.add_labels(
+            recipe,
+            sample_id,
+            truths,
+            assessable=assessable,
+            reviewer_confidence=confidence,
+            labeled_at=self.now(),
+        )
 
 
 def serve(app: ReviewApp, host: str = "127.0.0.1", port: int = 18120) -> ThreadingHTTPServer:
