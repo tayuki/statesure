@@ -94,6 +94,7 @@ class SampleRecord:
     stratum: str
     priority: str
     inclusion_probability: float
+    display_key: float
     readings: Mapping[tuple[str, str, str], SignalReading]
     """(judge_id, stage, signal) -> reading"""
     labels: Mapping[str, Label]
@@ -219,36 +220,65 @@ class LabelStore:
         labeled_at: datetime,
         label_source: str = "human",
     ) -> None:
-        """Record a human label. Model predictions are never accepted as labels."""
+        """Record one human label. Model predictions are never accepted as labels."""
+        self.add_labels(
+            recipe,
+            sample_id,
+            {signal: truth},
+            assessable=assessable,
+            reviewer_confidence=reviewer_confidence,
+            labeled_at=labeled_at,
+            label_source=label_source,
+        )
+
+    def add_labels(
+        self,
+        recipe: Recipe,
+        sample_id: str,
+        truths: Mapping[str, str | int | None],
+        *,
+        assessable: bool,
+        reviewer_confidence: str,
+        labeled_at: datetime,
+        label_source: str = "human",
+    ) -> None:
+        """Record several labels for one sample: all are validated first, then
+        written in a single transaction, so a sample is never half-labeled."""
         if label_source != "human":
             raise StoreError("only_human_labels")
         sample = self._sample_row(sample_id)
         if sample["recipe_id"] != recipe.id or sample["recipe_fingerprint"] != recipe.fingerprint:
             # Labels are validated against the schema of the version that produced the sample.
             raise StoreError("label_recipe_mismatch")
-        if signal not in recipe.signal_names:
-            raise StoreError("unknown_signal")
         if reviewer_confidence not in REVIEWER_CONFIDENCE:
             raise StoreError("invalid_reviewer_confidence")
         if labeled_at.tzinfo is None:
             raise StoreError("naive_timestamp")
-        if assessable:
-            if truth != HUMAN_UNCERTAIN and not recipe.signal(signal).accepts(truth):
-                raise StoreError("invalid_truth")
-        elif truth is not None:
-            raise StoreError("truth_without_assessable")
+        if not truths:
+            raise StoreError("no_labels")
+        for signal, truth in truths.items():
+            if signal not in recipe.signal_names:
+                raise StoreError("unknown_signal")
+            if assessable:
+                if truth != HUMAN_UNCERTAIN and not recipe.signal(signal).accepts(truth):
+                    raise StoreError("invalid_truth")
+            elif truth is not None:
+                raise StoreError("truth_without_assessable")
         with self._connect() as conn:
-            conn.execute(
+            conn.executemany(
                 "INSERT OR REPLACE INTO labels VALUES (?,?,?,?,?,?,?)",
-                (
-                    sample_id,
-                    signal,
-                    json.dumps(truth),
-                    int(assessable),
-                    reviewer_confidence,
-                    labeled_at.isoformat(),
-                    "human",
-                ),
+                [
+                    (
+                        sample_id,
+                        signal,
+                        json.dumps(truth),
+                        int(assessable),
+                        reviewer_confidence,
+                        labeled_at.isoformat(),
+                        "human",
+                    )
+                    for signal, truth in truths.items()
+                ],
             )
 
     def purge_expired(self, now: datetime) -> int:
@@ -272,10 +302,12 @@ class LabelStore:
                 purged += 1
         return purged
 
-    def image_path(self, sample_id: str) -> Path | None:
-        """Path of a sample's image, or None if absent or deleted."""
+    def image_path(self, sample_id: str, now: datetime | None = None) -> Path | None:
+        """Path of a sample's image, or None if absent, deleted or (given ``now``) expired."""
         row = self._sample_row(sample_id)
         if row["image_path"] is None or row["image_deleted_at"] is not None:
+            return None
+        if now is not None and datetime.fromisoformat(row["image_retention_until"]) <= now:
             return None
         return self.frames_dir / row["image_path"]
 
@@ -317,6 +349,7 @@ class LabelStore:
                 stratum=row["stratum"],
                 priority=row["priority"],
                 inclusion_probability=row["inclusion_probability"],
+                display_key=row["display_key"],
                 readings=readings.get(row["sample_id"], {}),
                 labels=labels.get(row["sample_id"], {}),
             )
