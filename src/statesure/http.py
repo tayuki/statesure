@@ -6,6 +6,7 @@ and error codes that never include request or response bodies or credentials.
 
 from __future__ import annotations
 
+import http.client
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
@@ -43,6 +44,9 @@ def request(
     except urllib.error.HTTPError as exc:
         raise HttpError(f"http_{exc.code}") from None
     except (urllib.error.URLError, TimeoutError, OSError):
+        raise HttpError("transport_failed") from None
+    except (http.client.HTTPException, ValueError):
+        # Malformed URLs or responses must stay on the HttpError path.
         raise HttpError("transport_failed") from None
     if len(data) > max_bytes:
         raise HttpError("response_too_large")

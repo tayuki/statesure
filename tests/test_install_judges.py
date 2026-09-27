@@ -71,6 +71,26 @@ def test_load_install_file(tmp_path: Path) -> None:
     assert "front-door" in load_install(path).installations
 
 
+def test_judge_id_tracks_inference_settings() -> None:
+    """Regression (#2 review): max_tokens changes answers, so it changes the id."""
+    judge = parse_install(_config()).judges["local-vlm"]
+    assert replace(judge, max_tokens=64).judge_id != judge.judge_id
+    assert replace(judge, timeout_s=5).judge_id == judge.judge_id
+
+
+def test_source_urls_are_kept_exactly() -> None:
+    """Regression (#2 review): only Frigate base URLs are normalized."""
+    doc = _config()
+    doc["installations"]["front-door"]["source"] = {
+        "kind": "http_image",
+        "url": "http://cam.lan/snapshot/",
+    }
+    source = parse_install(doc).installations["front-door"].source
+    assert source.url == "http://cam.lan/snapshot/"
+    frigate = parse_install(_config()).installations["front-door"].source
+    assert not frigate.url.endswith("/")
+
+
 def test_install_fingerprint_tracks_site_changes() -> None:
     install = parse_install(_config()).installations["front-door"]
     base = install.fingerprint()
@@ -106,6 +126,12 @@ def test_install_fingerprint_tracks_site_changes() -> None:
         ),
         (lambda d: d["installations"]["front-door"].update(judge="ghost"), "unknown_judge"),
         (lambda d: d.update(timezone="Mars/Olympus"), "unknown_time_zone"),
+        # Regression (#2 review): malformed ports are rejected at load time.
+        (lambda d: d["judges"]["local-vlm"].update(url="http://judge:bad/v1"), "invalid_url"),
+        (
+            lambda d: d["judges"]["local-vlm"].update(url="http://judge:70000/v1"),
+            "invalid_url",
+        ),
         (
             lambda d: d["installations"]["front-door"].update(zone={"description": "{{ x }}"}),
             "invalid_text",
@@ -318,3 +344,9 @@ def test_http_post_against_loopback(server: str, monkeypatch: pytest.MonkeyPatch
         http_post(server + "/error", {}, b"{}", 5)
     assert info.value.code == "http_500"
     assert "secret" not in str(info.value)
+
+
+def test_http_post_malformed_url_stays_a_judge_error() -> None:
+    with pytest.raises(JudgeError) as info:
+        http_post("http://judge:bad/v1", {}, b"{}", 1)
+    assert info.value.code == "transport_failed"
