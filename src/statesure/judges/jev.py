@@ -40,7 +40,8 @@ class JevJudge:
         if self.config.model:
             payload["model"] = self.config.model
         body = post_json(self._transport, self.config, payload)
-        if self.config.model and body.get("model") not in (None, self.config.model):
+        if self.config.model and body.get("model") != self.config.model:
+            # A reply that does not name the pinned model cannot be attributed to it.
             raise JudgeError("model_mismatch")
         answers = body.get("answers")
         if not isinstance(answers, dict):

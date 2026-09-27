@@ -7,6 +7,7 @@ body, the response body or credentials.
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -61,6 +62,9 @@ def http_post(url: str, headers: Mapping[str, str], body: bytes, timeout_s: floa
     except urllib.error.HTTPError as exc:
         raise JudgeError(f"http_{exc.code}") from None
     except (urllib.error.URLError, TimeoutError, OSError):
+        raise JudgeError("transport_failed") from None
+    except (http.client.HTTPException, ValueError):
+        # Malformed URLs or responses must stay on the JudgeError path.
         raise JudgeError("transport_failed") from None
     if len(data) > MAX_RESPONSE_BYTES:
         raise JudgeError("response_too_large")

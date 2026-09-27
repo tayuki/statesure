@@ -53,8 +53,15 @@ class JudgeConfig:
     @property
     def judge_id(self) -> str:
         """Stable id used in the label store: kind, model and a config hash."""
+        # Everything that changes the model's answers is part of the identity.
         digest = _digest(
-            {"kind": self.kind, "url": self.url, "model": self.model, "schema": self.json_schema}
+            {
+                "kind": self.kind,
+                "url": self.url,
+                "model": self.model,
+                "schema": self.json_schema,
+                "max_tokens": self.max_tokens,
+            }
         )
         return f"{self.kind}:{self.model or 'default'}@{digest[:8]}"
 
@@ -281,6 +288,7 @@ def _source(body: object) -> SourceConfig:
         parts = urlsplit(url)
         if parts.scheme not in ("rtsp", "rtsps") or not parts.hostname:
             raise InputError("invalid_rtsp_url")
+        _check_port(parts)
         if parts.username or parts.password:
             raise InputError("credentials_in_url")
     else:
@@ -291,7 +299,8 @@ def _source(body: object) -> SourceConfig:
             raise InputError("frigate_camera_required")
     elif camera is not None:
         raise InputError("camera_only_for_frigate")
-    return SourceConfig(kind=kind, url=url.rstrip("/"), camera=camera)
+    # Only Frigate's URL is a base URL; other URLs are used exactly as written.
+    return SourceConfig(kind=kind, url=url.rstrip("/") if kind == "frigate" else url, camera=camera)
 
 
 def _roi(raw: object) -> tuple[tuple[float, float, float, float], ...]:
@@ -331,10 +340,18 @@ def _http_url(value: object) -> str:
     parts = urlsplit(value)
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise InputError("invalid_url")
+    _check_port(parts)
     if parts.username or parts.password:
         # Credentials belong in environment variables, not in URLs.
         raise InputError("credentials_in_url")
     return value
+
+
+def _check_port(parts: Any) -> None:
+    try:
+        parts.port  # noqa: B018 - raises ValueError for a malformed or out-of-range port
+    except ValueError:
+        raise InputError("invalid_url") from None
 
 
 def _text(value: object, *, allow_empty: bool = False) -> str:
