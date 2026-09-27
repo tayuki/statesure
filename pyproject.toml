@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "statesure"
+version = "0.0.0"
+description = "Measure whether a home-state judgment can be trusted before you automate on it."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "tayuki" }]
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Home Automation",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=9", "ruff>=0.16"]
+
+[project.urls]
+Repository = "https://github.com/tayuki/statesure"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/statesure"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
