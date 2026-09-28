@@ -154,6 +154,33 @@ def test_token_and_origin_are_required(running, package_recipe: Recipe) -> None:
     assert store.records()[0].labels == {}
 
 
+@pytest.mark.parametrize(
+    ("headers", "status"),
+    [
+        # Regression: a real browser sent "Origin: null" for the page's own form.
+        ({"Origin": "null", "Sec-Fetch-Site": "same-origin"}, 303),
+        ({"Sec-Fetch-Site": "same-origin"}, 303),
+        ({"Origin": "null"}, 403),
+        ({"Origin": "null", "Sec-Fetch-Site": "cross-site"}, 403),
+        ({"Sec-Fetch-Site": "same-site"}, 403),
+    ],
+)
+def test_origin_handling(running, package_recipe: Recipe, headers: dict, status: int) -> None:
+    app, store, _, port = running
+    sample_id = _sample(store, package_recipe)
+    fields = {
+        "token": app.token,
+        "signal:package_present": "absent",
+        "signal:package_count": "0",
+        "signal:package_location": "none",
+        "reviewer_confidence": "confident",
+    }
+    response, _ = _request(
+        port, "POST", f"/label/{sample_id}", body=urlencode(fields), headers=headers
+    )
+    assert response.status == status
+
+
 def test_invalid_label_values_are_rejected(running, package_recipe: Recipe) -> None:
     app, store, _, port = running
     sample_id = _sample(store, package_recipe)
