@@ -38,7 +38,9 @@ SECURITY_HEADERS = {
         "form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
     ),
     "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "no-referrer",
+    # "same-origin" (not "no-referrer"): with no-referrer, browsers send
+    # "Origin: null" on same-page form posts, which the origin check rejects.
+    "Referrer-Policy": "same-origin",
     "Cache-Control": "no-store",
     "X-Frame-Options": "DENY",
 }
@@ -177,6 +179,19 @@ def _handler_for(app: ReviewApp) -> type[BaseHTTPRequestHandler]:
             port = self.server.server_address[1]
             return host in {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
 
+        def _same_origin(self) -> bool:
+            """Reject cross-site posts. ``Origin: null`` is accepted only when the
+            browser also reports the request as same-origin."""
+            origin = self.headers.get("Origin")
+            fetch_site = self.headers.get("Sec-Fetch-Site")
+            if fetch_site is not None and fetch_site != "same-origin":
+                return False
+            if origin is None:
+                return True
+            if origin == "null":
+                return fetch_site == "same-origin"
+            return origin == f"http://{self.headers.get('Host')}"
+
         def _send(self, status: HTTPStatus, body: bytes, content_type: str) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
@@ -211,8 +226,7 @@ def _handler_for(app: ReviewApp) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:  # noqa: N802
             if not self._allowed_host():
                 return self._page(HTTPStatus.FORBIDDEN, "<p>Forbidden host.</p>")
-            origin = self.headers.get("Origin")
-            if origin is not None and origin != f"http://{self.headers.get('Host')}":
+            if not self._same_origin():
                 return self._page(HTTPStatus.FORBIDDEN, "<p>Forbidden origin.</p>")
             path = urlsplit(self.path).path
             match = re.fullmatch(rf"/label/({_SAMPLE_ID_PATH})", path)

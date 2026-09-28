@@ -7,6 +7,7 @@ judges). Errors are reported as fixed codes; input content is never echoed.
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import sys
 from collections.abc import Iterator, Sequence
@@ -198,7 +199,13 @@ def _review(args: argparse.Namespace) -> int:
     from .review import ReviewApp, serve
 
     config = load_install(args.config)
-    server = serve(ReviewApp(LabelStore(config.store), config.recipes_dir), port=args.port)
+    try:
+        server = serve(ReviewApp(LabelStore(config.store), config.recipes_dir), port=args.port)
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            # Usually an earlier review page is still running.
+            raise InputError("port_in_use") from None
+        raise
     _emit({"review": f"http://127.0.0.1:{server.server_address[1]}/"}, sys.stderr)
     try:
         server.serve_forever()

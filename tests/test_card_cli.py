@@ -181,3 +181,22 @@ def test_cli_missing_store(capsys: pytest.CaptureFixture[str], tmp_path: Path) -
     db = str(tmp_path / "missing.sqlite")
     assert main(["purge", "--db", db]) == 2
     assert json.loads(capsys.readouterr().err) == {"error": "store_not_found"}
+
+
+def test_cli_review_reports_port_in_use(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    import socket
+
+    import yaml
+
+    from .test_install_judges import _config
+
+    doc = _config()
+    doc["recipes_dir"] = str(RECIPES)
+    config = tmp_path / "install.yaml"
+    config.write_text(yaml.safe_dump(doc), "utf-8")
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        assert main(["review", "--config", str(config), "--port", str(port)]) == 2
+    assert json.loads(capsys.readouterr().err) == {"error": "port_in_use"}
