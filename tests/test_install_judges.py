@@ -187,7 +187,7 @@ def _vlm_reply(content: dict) -> dict:
 
 
 def test_vlm_judge_request_and_reply(package_recipe: Recipe) -> None:
-    config = parse_install(_config()).judges["local-vlm"]
+    config = replace(parse_install(_config()).judges["local-vlm"], json_schema=True)
     fake = Recorder(
         _vlm_reply(
             {
@@ -209,6 +209,13 @@ def test_vlm_judge_request_and_reply(package_recipe: Recipe) -> None:
     assert parts[2]["text"].startswith("PROMPT\n\nReply with one JSON object only")
     assert body["temperature"] == 0
     assert body["response_format"]["json_schema"]["schema"] == response_schema(package_recipe)
+
+
+def test_json_schema_is_off_by_default() -> None:
+    doc = _config()
+    assert parse_install(doc).judges["local-vlm"].json_schema is False
+    doc["judges"]["local-vlm"]["json_schema"] = True
+    assert parse_install(doc).judges["local-vlm"].json_schema is True
 
 
 def test_vlm_judge_without_schema_and_bad_replies(package_recipe: Recipe) -> None:

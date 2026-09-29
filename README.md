@@ -41,6 +41,16 @@ appends the structured result to an observation log (no pixels), updates the
 confirmed state and, for samples chosen for review, keeps the image with an
 expiry. A warning is printed if a judge or source is outside your network.
 
+## Constrained output can bias answers
+
+`json_schema: true` asks an OpenAI-compatible server to constrain the reply to
+the recipe's schema. In a first real trial with a local 8B vision model, that
+setting made the model answer "present" for three frames that a person labeled
+"absent"; the same prompt without the constraint answered "absent" for all three.
+Three frames prove little, but it is a reminder of why statesure exists: the
+setting is off by default, it is part of the judge's identity, and you should
+compare both settings with labels before trusting either.
+
 ## Label samples
 
 ```bash
