@@ -113,6 +113,26 @@ def test_form_uses_readable_radio_choices(tmp_path: Path, package_recipe: Recipe
     assert '<select name="signal:' not in page
 
 
+def test_zone_text_only_for_zone_signals(tmp_path: Path, package_doc: dict) -> None:
+    """Regression (#6 review): a plain enum never borrows a site description."""
+    import yaml
+
+    from statesure import recipe as recipe_module
+    from statesure.review import _queue_page
+
+    package_doc["signals"]["package_location"].pop("zones_from")
+    recipes = tmp_path / "recipes"
+    recipes.mkdir()
+    (recipes / "package_at_door.yaml").write_text(yaml.safe_dump(package_doc), "utf-8")
+    recipe = recipe_module.load(recipes / "package_at_door.yaml")
+    store = LabelStore(tmp_path / "store.sqlite")
+    _sample(store, recipe)
+    app = ReviewApp(store, recipes, clock=Clock(), zone_texts={"install-a": {"doorstep": "X"}})
+    page = _queue_page(app)
+    assert "doorstep (X)" not in page
+    assert "doorstep</label>" in page
+
+
 def test_inconsistent_submission_explains(running, package_recipe: Recipe) -> None:
     app, store, _, port = running
     sample_id = _sample(store, package_recipe)

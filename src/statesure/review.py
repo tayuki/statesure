@@ -23,7 +23,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from .errors import StatesureError
-from .recipe import Recipe
+from .recipe import Recipe, SignalSpec
 from .recipe import load as load_recipe
 from .store import HUMAN_UNCERTAIN, PRIORITIES, LabelStore, SampleRecord
 
@@ -280,12 +280,14 @@ def _queue_page(app: ReviewApp) -> str:
 PRESENCE_TEXT = {"present": "yes, it is there", "absent": "no, it is not there"}
 
 
-def _choice_text(app: ReviewApp, record: SampleRecord, value: str | int) -> str:
-    if value in PRESENCE_TEXT:
+def _choice_text(app: ReviewApp, record: SampleRecord, spec: SignalSpec, value: str | int) -> str:
+    # Site descriptions apply only to signals whose values come from the installation.
+    if spec.zones_from == "install":
+        zones = app.zone_texts.get(record.install_fingerprint, {})
+        if isinstance(value, str) and value in zones:
+            return f"{value} ({zones[value]})"
+    if spec.type == "presence" and value in PRESENCE_TEXT:
         return f"{value} ({PRESENCE_TEXT[value]})"
-    zones = app.zone_texts.get(record.install_fingerprint, {})
-    if isinstance(value, str) and value in zones:
-        return f"{value} ({zones[value]})"
     if value == "none":
         return "none (there is nothing)"
     return str(value)
@@ -297,7 +299,7 @@ def _sample_form(app: ReviewApp, record: SampleRecord, recipe: Recipe) -> str:
     groups = []
     for spec in recipe.signals:
         name = html.escape(f"signal:{spec.name}")
-        choices = [(str(v), _choice_text(app, record, v)) for v in spec.values]
+        choices = [(str(v), _choice_text(app, record, spec, v)) for v in spec.values]
         choices.append((HUMAN_UNCERTAIN, "cannot tell from this image"))
         radios = "".join(
             f'<label class="choice"><input type="radio" name="{name}" '

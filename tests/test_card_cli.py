@@ -200,3 +200,49 @@ def test_cli_review_reports_port_in_use(capsys: pytest.CaptureFixture[str], tmp_
         port = busy.getsockname()[1]
         assert main(["review", "--config", str(config), "--port", str(port)]) == 2
     assert json.loads(capsys.readouterr().err) == {"error": "port_in_use"}
+
+
+def test_import_labels_replaces_a_complete_set(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, package_recipe: Recipe
+) -> None:
+    """Regression (#6 review): a corrected set is written as a whole."""
+    b = Builder(tmp_path, package_recipe)
+    sample_id = b.add(None, {"primary": D("present")})
+    b.store.add_labels(
+        package_recipe,
+        sample_id,
+        {"package_present": "absent", "package_count": 0, "package_location": "none"},
+        assessable=True,
+        reviewer_confidence="confident",
+        labeled_at=T0,
+    )
+    rows = [
+        {"signal": "package_present", "truth": "present"},
+        {"signal": "package_count", "truth": 1},
+        {"signal": "package_location", "truth": "doorstep"},
+    ]
+    labels = tmp_path / "labels.jsonl"
+    labels.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "sample_id": sample_id,
+                    **row,
+                    "assessable": True,
+                    "reviewer_confidence": "confident",
+                    "labeled_at": T0.isoformat(),
+                    "label_source": "human",
+                }
+            )
+            for row in rows
+        ),
+        "utf-8",
+    )
+    code = main(["import-labels", "--db", str(b.store.path), "--recipe", PACKAGE, str(labels)])
+    assert code == 0
+    (record,) = b.store.records()
+    assert {k: v.truth for k, v in record.labels.items()} == {
+        "package_present": "present",
+        "package_count": 1,
+        "package_location": "doorstep",
+    }
