@@ -98,6 +98,37 @@ def test_queue_page_hides_the_judge_answer(running, package_recipe: Recipe) -> N
     assert body.startswith(b"\xff\xd8")
 
 
+def test_form_uses_readable_radio_choices(tmp_path: Path, package_recipe: Recipe) -> None:
+    from statesure.review import _queue_page
+
+    store = LabelStore(tmp_path / "store.sqlite")
+    _sample(store, package_recipe)
+    app = ReviewApp(
+        store, RECIPES, clock=Clock(), zone_texts={"install-a": {"doorstep": "on the step"}}
+    )
+    page = _queue_page(app)
+    assert 'type="radio" name="signal:package_present" value="present"' in page
+    assert "absent (no, it is not there)" in page
+    assert "doorstep (on the step)" in page
+    assert '<select name="signal:' not in page
+
+
+def test_inconsistent_submission_explains(running, package_recipe: Recipe) -> None:
+    app, store, _, port = running
+    sample_id = _sample(store, package_recipe)
+    fields = {
+        "token": app.token,
+        "signal:package_present": "present",
+        "signal:package_count": "1",
+        "signal:package_location": "none",
+        "reviewer_confidence": "confident",
+    }
+    response, data = _request(port, "POST", f"/label/{sample_id}", body=urlencode(fields))
+    assert response.status == 400
+    assert b"inconsistent_labels" in data and b"check again" in data
+    assert store.records()[0].labels == {}
+
+
 def test_forbidden_host_and_bad_paths(running) -> None:
     _, _, _, port = running
     response, _ = _request(port, "GET", "/", headers={"Host": "evil.example"})

@@ -200,7 +200,12 @@ def _review(args: argparse.Namespace) -> int:
 
     config = load_install(args.config)
     try:
-        server = serve(ReviewApp(LabelStore(config.store), config.recipes_dir), port=args.port)
+        zone_texts = {
+            installation.fingerprint(): dict(installation.zones)
+            for installation in config.installations.values()
+        }
+        app = ReviewApp(LabelStore(config.store), config.recipes_dir, zone_texts=zone_texts)
+        server = serve(app, port=args.port)
     except OSError as exc:
         if exc.errno == errno.EADDRINUSE:
             # Usually an earlier review page is still running.

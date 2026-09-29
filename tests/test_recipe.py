@@ -150,3 +150,23 @@ def test_yaml_booleans_are_not_values(package_doc: dict) -> None:
     text = yaml.safe_dump(package_doc).replace("- walkway", "- yes")
     with pytest.raises(RecipeError):
         recipe_module.parse(yaml.safe_load(text))
+
+
+def test_conflicts_follow_implications(package_recipe) -> None:
+    uncertain = frozenset({"human_uncertain"})
+    assert package_recipe.conflicts({"package_present": "absent", "package_location": "none"}) == ()
+    assert package_recipe.conflicts({"package_present": "absent", "package_count": 2}) == (
+        "package_count",
+    )
+    assert package_recipe.conflicts({"package_present": "present", "package_location": "none"}) == (
+        "package_location",
+    )
+    assert package_recipe.conflicts({"package_present": "present", "package_count": 0}) == (
+        "package_count",
+    )
+    assert (
+        package_recipe.conflicts(
+            {"package_present": "absent", "package_count": "human_uncertain"}, ignore=uncertain
+        )
+        == ()
+    )

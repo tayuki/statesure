@@ -55,9 +55,12 @@ class ReviewApp:
         recipes_dir: Path,
         *,
         clock: Callable[[], datetime] | None = None,
+        zone_texts: Mapping[str, Mapping[str, str]] | None = None,
     ) -> None:
         self.store = store
         self.recipes_dir = recipes_dir
+        # installation fingerprint -> zone value -> the site's own description
+        self.zone_texts = dict(zone_texts or {})
         self.token = secrets.token_urlsafe(32)
         self._clock = clock
         self._recipes: dict[str, tuple[tuple[int, int], Recipe]] = {}
@@ -239,8 +242,15 @@ def _handler_for(app: ReviewApp) -> type[BaseHTTPRequestHandler]:
             try:
                 app.submit(match.group(1), form)
             except StatesureError as exc:
+                hint = (
+                    " The answers contradict each other (for example, present but "
+                    "location none). Go back and check again."
+                    if exc.code == "inconsistent_labels"
+                    else ""
+                )
                 return self._page(
-                    HTTPStatus.BAD_REQUEST, f"<p>Rejected: {html.escape(exc.code)}</p>"
+                    HTTPStatus.BAD_REQUEST,
+                    f"<p>Rejected: {html.escape(exc.code)}.{html.escape(hint)}</p>",
                 )
             self.send_response(HTTPStatus.SEE_OTHER)
             self.send_header("Location", "/")
@@ -267,27 +277,42 @@ def _queue_page(app: ReviewApp) -> str:
     return "".join(parts)
 
 
+PRESENCE_TEXT = {"present": "yes, it is there", "absent": "no, it is not there"}
+
+
+def _choice_text(app: ReviewApp, record: SampleRecord, value: str | int) -> str:
+    if value in PRESENCE_TEXT:
+        return f"{value} ({PRESENCE_TEXT[value]})"
+    zones = app.zone_texts.get(record.install_fingerprint, {})
+    if isinstance(value, str) and value in zones:
+        return f"{value} ({zones[value]})"
+    if value == "none":
+        return "none (there is nothing)"
+    return str(value)
+
+
 def _sample_form(app: ReviewApp, record: SampleRecord, recipe: Recipe) -> str:
     sid = html.escape(record.sample_id)
     title = html.escape(recipe.title.get("en", recipe.id))
-    rows = []
+    groups = []
     for spec in recipe.signals:
-        options = [f'<option value="{HUMAN_UNCERTAIN}">cannot tell</option>'] + [
-            f'<option value="{html.escape(str(v))}">{html.escape(str(v))}</option>'
-            for v in spec.values
-        ]
-        question = html.escape(spec.question.get("en", spec.name))
-        rows.append(
-            f'<label>{question}<br><select name="signal:{html.escape(spec.name)}" required>'
-            f'<option value="" selected disabled>choose</option>{"".join(options)}'
-            "</select></label>"
+        name = html.escape(f"signal:{spec.name}")
+        choices = [(str(v), _choice_text(app, record, v)) for v in spec.values]
+        choices.append((HUMAN_UNCERTAIN, "cannot tell from this image"))
+        radios = "".join(
+            f'<label class="choice"><input type="radio" name="{name}" '
+            f'value="{html.escape(value)}"{" required" if index == 0 else ""}> '
+            f"{html.escape(text)}</label>"
+            for index, (value, text) in enumerate(choices)
         )
+        question = html.escape(spec.question.get("en", spec.name))
+        groups.append(f"<fieldset><legend>{question}</legend>{radios}</fieldset>")
     return (
         f'<section><h2>{title}</h2><p class="meta">{html.escape(record.priority)}</p>'
         f'<img src="/image/{sid}" alt="stored sample">'
         f'<form method="post" action="/label/{sid}">'
         f'<input type="hidden" name="token" value="{html.escape(app.token)}">'
-        f"{''.join(rows)}"
+        f"{''.join(groups)}"
         '<label>Your confidence <select name="reviewer_confidence">'
         '<option value="confident">confident</option><option value="unsure">unsure</option>'
         "</select></label>"
@@ -307,6 +332,8 @@ def _layout(body: str) -> str:
         "section{border-top:1px solid #8884;padding:16px 0}"
         "img{max-width:100%;height:auto;display:block;margin:8px 0}"
         "label{display:block;margin:8px 0}.meta{color:#666;font-size:.9em}"
+        "fieldset{margin:12px 0;border:1px solid #8884;border-radius:6px}"
+        "label.choice{margin:6px 0}"
         "button{margin-top:8px;padding:6px 12px}"
         "</style></head><body>" + body + "</body></html>"
     )
