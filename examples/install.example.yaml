@@ -14,7 +14,7 @@ judges:
     kind: vlm_openai
     url: http://vlm.lan:8000/v1/chat/completions
     model: your-vision-model
-    json_schema: true
+    json_schema: false  # see README: measure before enabling constrained output
   local-djev:
     kind: jev
     url: http://djev.lan:8000/v1/systemone

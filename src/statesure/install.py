@@ -223,7 +223,9 @@ def _judge(name: str, body: object) -> JudgeConfig:
     max_tokens = doc.get("max_tokens", 400)
     if type(max_tokens) is not int or not 16 <= max_tokens <= 4096:
         raise InputError("invalid_max_tokens")
-    json_schema = doc.get("json_schema", True)
+    # Off by default: constrained decoding was seen to bias answers toward the first
+    # allowed value. Enable it only after comparing both settings with labels.
+    json_schema = doc.get("json_schema", False)
     if type(json_schema) is not bool:
         raise InputError("invalid_json_schema_flag")
     return JudgeConfig(
