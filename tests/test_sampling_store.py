@@ -193,3 +193,35 @@ def test_labels_require_the_same_recipe_version(tmp_path: Path, package_recipe: 
             labeled_at=T0,
         )
     assert info.value.code == "label_recipe_mismatch"
+
+
+def test_inconsistent_labels_are_rejected(tmp_path: Path, package_recipe: Recipe) -> None:
+    """Regression: the first real labels were "present" with location "none"."""
+    store = _store(tmp_path)
+    sample_id = _add(store, package_recipe)
+    kwargs = {"assessable": True, "reviewer_confidence": "confident", "labeled_at": T0}
+    with pytest.raises(StoreError) as info:
+        store.add_labels(
+            package_recipe,
+            sample_id,
+            {"package_present": "present", "package_location": "none"},
+            **kwargs,
+        )
+    assert info.value.code == "inconsistent_labels"
+    assert store.records()[0].labels == {}
+    # A later single-field label is checked against the labels already saved.
+    store.add_label(package_recipe, sample_id, "package_present", "absent", **kwargs)
+    with pytest.raises(StoreError):
+        store.add_label(package_recipe, sample_id, "package_count", 3, **kwargs)
+    store.add_labels(
+        package_recipe,
+        sample_id,
+        {"package_present": "absent", "package_count": 0, "package_location": "none"},
+        **kwargs,
+    )
+    store.add_labels(
+        package_recipe,
+        sample_id,
+        {"package_present": "present", "package_count": 1, "package_location": "human_uncertain"},
+        **kwargs,
+    )

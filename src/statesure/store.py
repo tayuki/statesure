@@ -264,6 +264,15 @@ class LabelStore:
                     raise StoreError("invalid_truth")
             elif truth is not None:
                 raise StoreError("truth_without_assessable")
+        if assessable:
+            existing = {
+                signal: label.truth
+                for signal, label in self._labels_for(sample_id).items()
+                if label.assessable
+            }
+            if recipe.conflicts({**existing, **truths}, ignore=frozenset({HUMAN_UNCERTAIN})):
+                # e.g. "present" with location "none": ask the person to check again.
+                raise StoreError("inconsistent_labels")
         with self._connect() as conn:
             conn.executemany(
                 "INSERT OR REPLACE INTO labels VALUES (?,?,?,?,?,?,?)",
@@ -280,6 +289,23 @@ class LabelStore:
                     for signal, truth in truths.items()
                 ],
             )
+
+    def _labels_for(self, sample_id: str) -> dict[str, Label]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT signal, truth_json, assessable, reviewer_confidence, labeled_at "
+                "FROM labels WHERE sample_id=?",
+                (sample_id,),
+            ).fetchall()
+        return {
+            signal: Label(
+                truth=json.loads(truth),
+                assessable=bool(assessable),
+                reviewer_confidence=confidence,
+                labeled_at=datetime.fromisoformat(labeled_at),
+            )
+            for signal, truth, assessable, confidence, labeled_at in rows
+        }
 
     def purge_expired(self, now: datetime) -> int:
         """Delete image bytes past their retention time. Idempotent."""

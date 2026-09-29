@@ -200,7 +200,12 @@ def _review(args: argparse.Namespace) -> int:
 
     config = load_install(args.config)
     try:
-        server = serve(ReviewApp(LabelStore(config.store), config.recipes_dir), port=args.port)
+        zone_texts = {
+            installation.fingerprint(): dict(installation.zones)
+            for installation in config.installations.values()
+        }
+        app = ReviewApp(LabelStore(config.store), config.recipes_dir, zone_texts=zone_texts)
+        server = serve(app, port=args.port)
     except OSError as exc:
         if exc.errno == errno.EADDRINUSE:
             # Usually an earlier review page is still running.
@@ -234,23 +239,37 @@ def _import_labels(args: argparse.Namespace) -> int:
         "labeled_at",
         "label_source",
     }
-    imported = 0
+    # Rows are grouped per sample and written together, so a corrected set of
+    # labels replaces the old set instead of being checked row by row against it.
+    groups: dict[str, dict[str, Any]] = {}
     for row in _read_jsonl(args.labels):
         if not isinstance(row, dict) or set(row) != keys:
             raise InputError("invalid_label_fields")
         if type(row["assessable"]) is not bool:
             raise InputError("invalid_label_fields")
-        store.add_label(
-            loaded,
-            row["sample_id"],
-            row["signal"],
-            row["truth"],
-            assessable=row["assessable"],
-            reviewer_confidence=row["reviewer_confidence"],
-            labeled_at=datetime.fromisoformat(row["labeled_at"]),
-            label_source=row["label_source"],
+        meta = (row["assessable"], row["reviewer_confidence"], row["label_source"])
+        group = groups.setdefault(
+            row["sample_id"], {"meta": meta, "truths": {}, "labeled_at": row["labeled_at"]}
         )
-        imported += 1
+        if group["meta"] != meta:
+            raise InputError("mixed_label_rows")
+        if row["signal"] in group["truths"]:
+            raise InputError("duplicate_label_row")
+        group["truths"][row["signal"]] = row["truth"]
+        group["labeled_at"] = max(group["labeled_at"], row["labeled_at"])
+    imported = 0
+    for sample_id, group in groups.items():
+        assessable, confidence, source = group["meta"]
+        store.add_labels(
+            loaded,
+            sample_id,
+            group["truths"],
+            assessable=assessable,
+            reviewer_confidence=confidence,
+            labeled_at=datetime.fromisoformat(group["labeled_at"]),
+            label_source=source,
+        )
+        imported += len(group["truths"])
     _emit({"imported": imported})
     return 0
 

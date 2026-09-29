@@ -178,6 +178,26 @@ class Recipe:
     def signal_names(self) -> tuple[str, ...]:
         return tuple(spec.name for spec in self.signals)
 
+    def conflicts(
+        self, values: Mapping[str, str | int | None], *, ignore: frozenset[object] = frozenset()
+    ) -> tuple[str, ...]:
+        """Signals whose values contradict an implication, e.g. present with count 0.
+
+        Values in ``ignore`` (such as "cannot tell") never conflict.
+        """
+        found: list[str] = []
+        for rule in self.implications:
+            if rule.when.abstained or values.get(rule.when.signal) != rule.when.equals:
+                continue
+            for target, expected in rule.set.items():
+                value = values.get(target)
+                if target in values and value not in ignore and value != expected:
+                    found.append(target)
+            for target, fix in rule.fix.items():
+                if values.get(target) == fix.if_equals:
+                    found.append(target)
+        return tuple(dict.fromkeys(found))
+
 
 def load(path: str | Path) -> Recipe:
     """Load and validate a recipe file."""
